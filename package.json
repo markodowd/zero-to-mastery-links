@@ -1,0 +1,16 @@
+{
+  "name": "ztm-course-sync",
+  "version": "1.0.0",
+  "description": "Syncs the ZTM course list to academy.csv",
+  "engines": {
+    "node": ">=20.18.1"
+  },
+  "scripts": {
+    "presync": "npm test",
+    "sync": "node scripts/sync-courses.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0"
+  }
+}
