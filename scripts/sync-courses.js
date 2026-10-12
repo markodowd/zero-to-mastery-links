@@ -1,13 +1,14 @@
 /**
  * sync-courses.js
  *
- * Keeps academy.csv up to date with three columns:
+ * Keeps academy.csv up to date with four columns:
  *
  *   course       — course title (scraper keeps this fresh)
  *   enrolled_url — https://academy.zerotomastery.io/courses/enrolled/XXXXXX
  *                  (manually added once; never overwritten by this script)
  *   public_url   — https://academy.zerotomastery.io/p/course-slug
  *                  (always populated by scraper; fallback for non-members)
+ *   image_url    — URL of the course's main image
  *
  * Usage:
  *   node scripts/sync-courses.js
@@ -129,7 +130,7 @@ function extractCoursesFromPage($) {
     if (!title || title.length < 3) return;
 
     const publicUrl = href.startsWith("http") ? href : BASE + href;
-    results.push({ course: title, publicUrl });
+    results.push({ course: title, publicUrl, imageUrl: "" });
   });
   return results;
 }
@@ -186,9 +187,10 @@ function mergeEnrolledUrls(scrapedCourses, byPublicUrl, byTitle) {
 function buildCSV(courses) {
   return (
     [
-      "course,enrolled_url,public_url",
+      "course,enrolled_url,public_url,image_url",
       ...courses.map(
-        (c) => `${q(c.course)},${q(c.enrolledUrl)},${q(c.publicUrl)}`,
+        (c) =>
+          `${q(c.course)},${q(c.enrolledUrl)},${q(c.publicUrl)},${q(c.imageUrl)}`,
       ),
     ].join("\n") + "\n"
   );
@@ -200,6 +202,33 @@ async function fetchHTML(url) {
   const res = await fetch(url, { headers: HEADERS });
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
   return res.text();
+}
+
+function extractCourseImage($) {
+  const mainImage = $('[data-main-image]').first();
+  const imageUrl =
+    mainImage.attr("src") ||
+    mainImage.attr("data-src") ||
+    $('meta[property="og:image"]').attr("content") ||
+    $('meta[name="twitter:image"]').attr("content") ||
+    "";
+  return imageUrl.replace(/&amp;/g, "&");
+}
+
+async function addCourseImages(courses) {
+  const withImages = [];
+  for (const course of courses) {
+    try {
+      const html = await fetchHTML(course.publicUrl);
+      course.imageUrl = extractCourseImage(cheerio.load(html));
+    } catch (err) {
+      console.warn(`    Could not fetch image for "${course.course}": ${err.message}`);
+      course.imageUrl = "";
+    }
+    withImages.push(course);
+    await sleep(DELAY_MS);
+  }
+  return withImages;
 }
 
 function getNextPage($) {
@@ -296,6 +325,8 @@ async function run() {
   // Preserve scrape order (category by category) so downstream consumers
   // aren't affected by row reordering between runs.
   const merged = mergeEnrolledUrls(unique, byPublicUrl, byTitle);
+  console.log("Fetching course image URLs...");
+  await addCourseImages(merged);
   const withEnrolled = merged.filter((c) => c.enrolledUrl).length;
   const withoutEnrolled = merged.filter((c) => !c.enrolledUrl).length;
 
@@ -319,6 +350,8 @@ module.exports = {
   normalizeTitle,
   loadExisting,
   extractCoursesFromPage,
+  extractCourseImage,
+  addCourseImages,
   mergeEnrolledUrls,
   buildCSV,
 };

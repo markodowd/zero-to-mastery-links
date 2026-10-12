@@ -19,6 +19,7 @@ const {
   normalizeTitle,
   loadExisting,
   extractCoursesFromPage,
+  extractCourseImage,
   mergeEnrolledUrls,
   buildCSV,
 } = require('./sync-courses');
@@ -312,10 +313,29 @@ describe('mergeEnrolledUrls', () => {
 
 // ── buildCSV ──────────────────────────────────────────────────────────────────
 
+describe('extractCourseImage', () => {
+  it('reads the main image URL and decodes HTML entities', () => {
+    const $ = cheerio.load(
+      '<img data-main-image src="https://images.example/python.jpg?w=600&amp;h=338">'
+    );
+    assert.equal(
+      extractCourseImage($),
+      'https://images.example/python.jpg?w=600&h=338'
+    );
+  });
+
+  it('falls back to the Open Graph image', () => {
+    const $ = cheerio.load('<meta property="og:image" content="https://images.example/course.jpg">');
+    assert.equal(extractCourseImage($), 'https://images.example/course.jpg');
+  });
+});
+
+// ── buildCSV ──────────────────────────────────────────────────────────────────
+
 describe('buildCSV', () => {
   it('outputs the correct header row', () => {
     const csv = buildCSV([]);
-    assert.ok(csv.startsWith('course,enrolled_url,public_url\n'));
+    assert.ok(csv.startsWith('course,enrolled_url,public_url,image_url\n'));
   });
 
   it('writes a data row with all three columns quoted', () => {
@@ -323,11 +343,13 @@ describe('buildCSV', () => {
       course: 'Python Bootcamp',
       enrolledUrl: 'https://academy.zerotomastery.io/courses/enrolled/700001',
       publicUrl: 'https://academy.zerotomastery.io/p/python',
+      imageUrl: 'https://images.example/python.jpg',
     }];
     const csv = buildCSV(courses);
     assert.ok(csv.includes('"Python Bootcamp"'));
     assert.ok(csv.includes('"https://academy.zerotomastery.io/courses/enrolled/700001"'));
     assert.ok(csv.includes('"https://academy.zerotomastery.io/p/python"'));
+    assert.ok(csv.includes('"https://images.example/python.jpg"'));
   });
 
   it('handles courses with no enrolled URL (empty string in col 2)', () => {
@@ -338,7 +360,7 @@ describe('buildCSV', () => {
     }];
     const csv = buildCSV(courses);
     const dataLine = csv.split('\n')[1];
-    assert.equal(dataLine, '"New Course","","https://academy.zerotomastery.io/p/new-course"');
+    assert.equal(dataLine, '"New Course","","https://academy.zerotomastery.io/p/new-course",""');
   });
 
   it('escapes double-quotes inside field values', () => {
@@ -346,6 +368,7 @@ describe('buildCSV', () => {
       course: 'Web Dev: "The Best" Course',
       enrolledUrl: '',
       publicUrl: 'https://academy.zerotomastery.io/p/web',
+      imageUrl: '',
     }];
     const csv = buildCSV(courses);
     assert.ok(csv.includes('"Web Dev: ""The Best"" Course"'));
